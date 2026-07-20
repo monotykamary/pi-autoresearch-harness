@@ -28,6 +28,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as http from 'node:http';
 import { fileURLToPath } from 'node:url';
+import { defaultLogPath } from './platform.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,7 +36,7 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PI_AUTORESEARCH_PORT ?? 9878);
 const HOST = '127.0.0.1';
 const BASE_URL = `http://${HOST}:${PORT}`;
-const LOG = process.env.PI_AUTORESEARCH_LOG ?? '/tmp/pi-autoresearch-harness.log';
+const LOG = process.env.PI_AUTORESEARCH_LOG ?? defaultLogPath();
 
 // =============================================================================
 // HTTP helpers
@@ -111,7 +112,7 @@ function readSessionIdFromFile(): string | undefined {
 }
 
 function agentHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { 'x-cwd': encodeURIComponent(process.cwd()) };
   const sessionId = readSessionIdFromFile();
   if (sessionId) headers['x-session-id'] = sessionId;
   return headers;
@@ -129,26 +130,19 @@ async function isUp(): Promise<boolean> {
 async function startServer(): Promise<boolean> {
   if (await isUp()) return true;
 
-  let serverScript = path.resolve(__dirname, 'server.js');
-  if (!fs.existsSync(serverScript)) {
-    const tsPath = path.resolve(__dirname, 'server.ts');
-    if (fs.existsSync(tsPath)) serverScript = tsPath;
-  }
-
-  const useTsx = serverScript.endsWith('.ts');
-  const cmd = useTsx ? 'npx' : 'node';
-  const args = useTsx ? ['tsx', serverScript] : [serverScript];
-
-  const child = spawnChild(cmd, args, {
+  const serverLauncher = path.resolve(__dirname, 'server-launcher.mjs');
+  const child = spawnChild(process.execPath, [serverLauncher], {
     cwd: process.cwd(),
     stdio: ['ignore', 'ignore', 'ignore'],
     detached: true,
+    windowsHide: true,
     env: {
       ...process.env,
       PI_AUTORESEARCH_PORT: String(PORT),
       PI_AUTORESEARCH_LOG: LOG,
     },
   });
+  child.on('error', () => {});
   child.unref();
 
   for (let i = 0; i < 150; i++) {
@@ -223,7 +217,7 @@ async function main(): Promise<void> {
   const rawArgs = process.argv.slice(2);
 
   if (rawArgs.length === 0) {
-    process.stderr.write(`pi-autoresearch — autonomous experiment loop CLI
+    process.stdout.write(`pi-autoresearch — autonomous experiment loop CLI
 
 Usage:
   pi-autoresearch activate "<goal>"
@@ -239,19 +233,25 @@ Usage:
   pi-autoresearch --start      Start the harness server
   pi-autoresearch --stop       Stop the harness server
   pi-autoresearch --restart    Restart the harness server
-  pi-autoresearch --logs       Tail the server log
+  pi-autoresearch --logs       Follow the server log
 
 Also accepts JSON for programmatic use:
   pi-autoresearch '{ "action": "run", "command": "bash autoresearch.sh" }'
 
 Environment:
   PI_AUTORESEARCH_PORT     Server port (default: 9878)
-  PI_AUTORESEARCH_LOG      Log file (default: /tmp/pi-autoresearch-harness.log)
+  PI_AUTORESEARCH_LOG      Log file (default: OS temp directory)
 `);
     return;
   }
 
   const first = rawArgs[0];
+
+  if (first === '--help' || first === '-h') {
+    process.argv.splice(2);
+    await main();
+    return;
+  }
 
   // --- Server management commands ---
   if (first === '--status') {
@@ -289,8 +289,30 @@ Environment:
   }
 
   if (first === '--logs') {
-    const { spawn } = await import('node:child_process');
-    spawn('tail', ['-f', LOG], { stdio: 'inherit' });
+    let offset = 0;
+    const printAppended = () => {
+      try {
+        const size = fs.statSync(LOG).size;
+        if (size < offset) offset = 0;
+        if (size === offset) return;
+        const length = size - offset;
+        const buffer = Buffer.alloc(length);
+        const fd = fs.openSync(LOG, 'r');
+        try {
+          fs.readSync(fd, buffer, 0, length, offset);
+        } finally {
+          fs.closeSync(fd);
+        }
+        offset = size;
+        process.stdout.write(buffer);
+      } catch {}
+    };
+    printAppended();
+    fs.watchFile(LOG, { interval: 500 }, printAppended);
+    process.on('SIGINT', () => {
+      fs.unwatchFile(LOG);
+      process.exit(0);
+    });
     return;
   }
 

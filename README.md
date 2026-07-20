@@ -276,7 +276,10 @@ The test suite includes:
 ## Prerequisites
 
 1. **Install pi** — follow the instructions at [pi.dev](https://pi.dev/)
-2. **An API key** for your preferred LLM provider (configured in pi)
+2. **Git** — on Windows, install [Git for Windows](https://gitforwindows.org/) so Git Bash is available for `autoresearch.sh`
+3. **An API key** for your preferred LLM provider (configured in pi)
+
+Windows runs the harness in the background without opening a console window. Set `PI_AUTORESEARCH_BASH` only if Git Bash is installed in a non-standard location.
 
 ## Controlling costs
 

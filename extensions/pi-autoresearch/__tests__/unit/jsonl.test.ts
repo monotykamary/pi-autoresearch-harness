@@ -58,7 +58,9 @@ describe('detectAutoresearchWorktree', () => {
     // With matching sessionId - should find it
     const resultSpecific = detectAutoresearchWorktree(repoDir, sessionId);
     expect(resultSpecific).not.toBeNull();
-    expect(resultSpecific).toContain('autoresearch/test-detect-session');
+    expect(path.normalize(resultSpecific!)).toContain(
+      path.join('autoresearch', 'test-detect-session')
+    );
     expect(fs.existsSync(path.join(resultSpecific!, 'autoresearch.jsonl'))).toBe(true);
 
     // With wrong sessionId - should NOT find it
@@ -88,12 +90,12 @@ describe('detectAutoresearchWorktree', () => {
     // Requesting sessionId1 should return worktreePath1, NOT worktreePath2
     const result1 = detectAutoresearchWorktree(repoDir, sessionId1);
     expect(result1).not.toBeNull();
-    expect(result1).toContain('autoresearch/test-session-1');
+    expect(path.normalize(result1!)).toContain(path.join('autoresearch', 'test-session-1'));
 
     // Requesting sessionId2 should return worktreePath2, NOT worktreePath1
     const result2 = detectAutoresearchWorktree(repoDir, sessionId2);
     expect(result2).not.toBeNull();
-    expect(result2).toContain('autoresearch/test-session-2');
+    expect(path.normalize(result2!)).toContain(path.join('autoresearch', 'test-session-2'));
 
     // Results should be different paths
     expect(result1).not.toBe(result2);

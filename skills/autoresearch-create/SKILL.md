@@ -47,9 +47,9 @@ pi-autoresearch '{ "action": "run", "command": "bash autoresearch.sh" }'
 | `pi-autoresearch --start`   | Start the harness server            |
 | `pi-autoresearch --stop`    | Graceful shutdown                   |
 | `pi-autoresearch --restart` | Stop + start fresh                  |
-| `pi-autoresearch --logs`    | `tail -f` the server log            |
+| `pi-autoresearch --logs`    | Follow the server log               |
 
-Env vars: `PI_AUTORESEARCH_PORT` (default `9878`), `PI_AUTORESEARCH_LOG` (default `/tmp/pi-autoresearch-harness.log`).
+Env vars: `PI_AUTORESEARCH_PORT` (default `9878`), `PI_AUTORESEARCH_LOG` (default: OS temp directory), and `PI_AUTORESEARCH_BASH` (optional Git Bash path on Windows).
 
 ## Workflow
 

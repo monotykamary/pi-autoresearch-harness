@@ -7,7 +7,6 @@
  *
  * This extension:
  *   - Installs the CLI shell alias on session start
- *   - Starts/stops the harness server
  *   - Manages the status widget and fullscreen dashboard
  *   - Provides the /autoresearch command (including live export)
  *   - Auto-resumes the experiment loop after pi context compaction
@@ -17,9 +16,9 @@
 
 import { tmpdir } from 'node:os';
 import * as fs from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawn as spawnChild, type ChildProcess } from 'node:child_process';
+import { spawn as spawnChild } from 'node:child_process';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import {
   getAgentDir,
@@ -79,7 +78,7 @@ function getProjectRoot(): string {
 }
 
 function getCliPath(): string {
-  return join(getProjectRoot(), 'harness', 'cli.ts');
+  return join(getProjectRoot(), 'harness', 'pi-autoresearch.mjs');
 }
 
 // ---------------------------------------------------------------------------
@@ -95,10 +94,8 @@ function installShellAlias(): void {
     const cliPath = getCliPath();
     const linkPath = join(agentBinDir, 'pi-autoresearch');
 
-    const projectRoot = getProjectRoot();
     const wrapperContent = `#!/bin/sh
-cd "${projectRoot}" 2>/dev/null
-exec npx tsx "${cliPath}" "$@"
+exec "${process.execPath.replace(/\\/g, '/')}" "${cliPath.replace(/\\/g, '/')}" "$@"
 `;
 
     let currentContent: string | null = null;
@@ -108,47 +105,17 @@ exec npx tsx "${cliPath}" "$@"
     if (currentContent !== wrapperContent) {
       fs.writeFileSync(linkPath, wrapperContent, { mode: 0o755 });
     }
+
+    if (process.platform === 'win32') {
+      const cmdPath = `${linkPath}.cmd`;
+      const cmdContent = `@echo off\r\n"${process.execPath}" "${cliPath}" %*\r\n`;
+      let currentCmdContent: string | null = null;
+      try {
+        currentCmdContent = fs.readFileSync(cmdPath, 'utf-8');
+      } catch {}
+      if (currentCmdContent !== cmdContent) fs.writeFileSync(cmdPath, cmdContent);
+    }
   } catch {}
-}
-
-// ---------------------------------------------------------------------------
-// Harness server lifecycle
-// ---------------------------------------------------------------------------
-
-interface HarnessServerController {
-  start(): void;
-  stop(): void;
-}
-
-function createHarnessServer(): HarnessServerController {
-  let harnessProcess: ChildProcess | null = null;
-
-  function start(): void {
-    if (harnessProcess) return;
-    if (process.env.PI_SWARM_SPAWNED === '1') return;
-
-    const cliPath = getCliPath();
-    const projectRoot = getProjectRoot();
-
-    try {
-      harnessProcess = spawnChild('npx', ['tsx', cliPath, '--start'], {
-        cwd: projectRoot,
-        stdio: ['ignore', 'ignore', 'ignore'],
-        detached: true,
-      });
-      harnessProcess.unref();
-    } catch {}
-  }
-
-  function stop(): void {
-    if (!harnessProcess) return;
-    try {
-      harnessProcess.kill('SIGTERM');
-    } catch {}
-    harnessProcess = null;
-  }
-
-  return { start, stop };
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +142,7 @@ function readConfig(cwd: string): AutoresearchConfig {
 function resolveWorkDir(ctxCwd: string): string {
   const config = readConfig(ctxCwd);
   if (config.workingDir) {
-    return config.workingDir.startsWith('/') ? config.workingDir : join(ctxCwd, config.workingDir);
+    return isAbsolute(config.workingDir) ? config.workingDir : join(ctxCwd, config.workingDir);
   }
   return ctxCwd;
 }
@@ -666,10 +633,10 @@ const dashboardSseClients = new Set<ServerResponse>();
 
 function openInBrowser(url: string): void {
   if (process.platform === 'win32') {
-    spawnChild('cmd', ['/c', 'start', '', url], {
+    spawnChild('rundll32.exe', ['url.dll,FileProtocolHandler', url], {
       detached: true,
-      shell: true,
       stdio: 'ignore',
+      windowsHide: true,
     }).unref();
     return;
   }
@@ -882,8 +849,6 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
   const shortcuts = resolveAutoresearchShortcuts();
 
   const updateWidget = createHarnessWidgetUpdater(getRuntime, shortcuts);
-
-  const harnessServer = createHarnessServer();
 
   function getDirs() {
     const baseDir = join(process.cwd(), '.pi', 'autoresearch');
@@ -1125,7 +1090,6 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
   pi.on('session_start', async (_event, extCtx) => {
     installShellAlias();
     writeSessionId(extCtx, getDirs());
-    harnessServer.start();
 
     // Reconstruct state from existing JSONL
     const runtime = getRuntime(extCtx);
@@ -1179,7 +1143,6 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
     }
     clearSessionUi(extCtx, clearOverlay);
     runtimeStore.clear(getSessionKey(extCtx));
-    harnessServer.stop();
     stopDashboardServer();
   });
 }

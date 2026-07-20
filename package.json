@@ -6,7 +6,7 @@
     "pi-package"
   ],
   "bin": {
-    "pi-autoresearch": "harness/cli.ts"
+    "pi-autoresearch": "harness/pi-autoresearch.mjs"
   },
   "files": [
     "extensions",
@@ -24,8 +24,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "lint:dead": "knip --no-gitignore",
-    "postinstall": "simple-git-hooks 2>/dev/null || true"
+    "lint:dead": "knip --no-gitignore"
   },
   "type": "module",
   "pi": {
@@ -70,5 +69,8 @@
     "protobufjs": "8.4.0",
     "ws": "8.20.1"
   },
-  "packageManager": "pnpm@11.6.0"
+  "packageManager": "pnpm@11.6.0",
+  "dependencies": {
+    "tsx": "4.23.1"
+  }
 }

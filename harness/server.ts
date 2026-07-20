@@ -15,10 +15,11 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { homedir, tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
-import { execSync, execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { execSync, execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { defaultLogPath, resolveBashPath } from './platform.js';
 import {
   runHook,
   steerMessageFor,
@@ -256,15 +257,41 @@ async function fireHook(payload: HookPayload): Promise<string | null> {
   return steerMessageFor(payload.event, result);
 }
 
-function killTree(pid: number): void {
+function normalizePath(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/');
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function canonicalPath(filePath: string): string {
+  try {
+    return normalizePath(fs.realpathSync.native(filePath));
+  } catch {
+    return normalizePath(resolve(filePath));
+  }
+}
+
+function worktreePaths(output: string): string[] {
+  return output
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => line.slice(9).trim());
+}
+
+function killProcessTree(pid: number): void {
+  if (process.platform === 'win32') {
+    spawnSync('taskkill.exe', ['/pid', String(pid), '/t', '/f'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    });
+    return;
+  }
+
   try {
     process.kill(-pid, 'SIGTERM');
   } catch {
     try {
       process.kill(pid, 'SIGTERM');
-    } catch {
-      // Process may have already exited
-    }
+    } catch {}
   }
 }
 
@@ -453,22 +480,18 @@ function resolveWorkDir(ctxCwd: string, session: SessionState): string {
 
 function detectAutoresearchWorktree(ctxCwd: string, sessionId?: string): string | null {
   try {
-    const output = execSync('git worktree list --porcelain', {
+    const output = execFileSync('git', ['worktree', 'list', '--porcelain'], {
       cwd: ctxCwd,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'ignore'],
     });
-    const lines = output.trim().split('\n');
-    for (const line of lines) {
-      if (line.startsWith('worktree ')) {
-        const worktreePath = line.slice(9).trim();
-        if (sessionId) {
-          const expectedSuffix = join('autoresearch', sessionId);
-          if (!worktreePath.endsWith(expectedSuffix)) continue;
-        }
-        const jsonlPath = join(worktreePath, 'autoresearch.jsonl');
-        if (fs.existsSync(jsonlPath)) return worktreePath;
+    for (const worktreePath of worktreePaths(output)) {
+      if (sessionId) {
+        const expectedSuffix = normalizePath(join('autoresearch', sessionId));
+        if (!canonicalPath(worktreePath).endsWith(expectedSuffix)) continue;
       }
+      const jsonlPath = join(worktreePath, 'autoresearch.jsonl');
+      if (fs.existsSync(jsonlPath)) return worktreePath;
     }
   } catch {
     // Git command failed
@@ -481,17 +504,25 @@ function createAutoresearchWorktree(ctxCwd: string, sessionId: string): string |
   const worktreePath = join(ctxCwd, worktreeName);
 
   try {
-    const listOutput = execSync('git worktree list --porcelain', {
+    const listOutput = execFileSync('git', ['worktree', 'list', '--porcelain'], {
       cwd: ctxCwd,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'ignore'],
     });
-    if (listOutput.includes(worktreePath) && fs.existsSync(worktreePath)) {
+    if (
+      worktreePaths(listOutput).some(
+        (existingPath) => canonicalPath(existingPath) === canonicalPath(worktreePath)
+      ) &&
+      fs.existsSync(worktreePath)
+    ) {
       return worktreePath;
     }
     // Prune stale entries
     try {
-      execSync('git worktree prune', { cwd: ctxCwd, stdio: ['pipe', 'pipe', 'ignore'] });
+      execFileSync('git', ['worktree', 'prune'], {
+        cwd: ctxCwd,
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
     } catch {}
   } catch {}
 
@@ -503,19 +534,19 @@ function createAutoresearchWorktree(ctxCwd: string, sessionId: string): string |
   const branchName = `autoresearch/${sessionId}`;
 
   try {
-    const branchOutput = execSync(`git branch --list ${branchName}`, {
+    const branchOutput = execFileSync('git', ['branch', '--list', branchName], {
       cwd: ctxCwd,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'ignore'],
     });
     if (!branchOutput.trim()) {
-      execSync(`git branch ${branchName}`, {
+      execFileSync('git', ['branch', branchName], {
         cwd: ctxCwd,
         stdio: ['pipe', 'pipe', 'ignore'],
       });
     }
 
-    execSync(`git worktree add "${worktreePath}" ${branchName}`, {
+    execFileSync('git', ['worktree', 'add', worktreePath, branchName], {
       cwd: ctxCwd,
       stdio: ['pipe', 'pipe', 'ignore'],
     });
@@ -529,15 +560,21 @@ function createAutoresearchWorktree(ctxCwd: string, sessionId: string): string |
 
 function removeAutoresearchWorktree(ctxCwd: string, worktreePath: string): void {
   try {
-    execSync(`git worktree remove --force "${worktreePath}"`, {
+    const branchName = execFileSync('git', ['branch', '--show-current'], {
+      cwd: worktreePath,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+    execFileSync('git', ['worktree', 'remove', '--force', worktreePath], {
       cwd: ctxCwd,
       stdio: ['pipe', 'pipe', 'ignore'],
     });
-    const branchName = worktreePath.replace(ctxCwd + '/', '');
-    execSync(`git branch -D ${branchName}`, {
-      cwd: ctxCwd,
-      stdio: ['pipe', 'pipe', 'ignore'],
-    });
+    if (branchName) {
+      execFileSync('git', ['branch', '-D', branchName], {
+        cwd: ctxCwd,
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+    }
     const autoresearchDir = join(ctxCwd, 'autoresearch');
     try {
       if (fs.existsSync(autoresearchDir)) {
@@ -938,10 +975,11 @@ async function dispatchAction(
         actualTotalBytes: number;
       }>((resolve) => {
         let processTimedOut = false;
-        const child = spawn('bash', ['-c', command], {
+        const child = spawn(resolveBashPath(), ['-c', command], {
           cwd: workDir,
           detached: true,
           stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
         });
 
         const chunks: Buffer[] = [];
@@ -991,7 +1029,7 @@ async function dispatchAction(
         if (timeout > 0) {
           timeoutHandle = setTimeout(() => {
             processTimedOut = true;
-            if (child.pid) killTree(child.pid);
+            if (child.pid) killProcessTree(child.pid);
           }, timeout);
         }
 
@@ -1039,15 +1077,24 @@ async function dispatchAction(
         const checksTimeout = checksTimeoutSeconds * 1000;
         const ct0 = Date.now();
         try {
-          const result = gitExec(['-c', `bash "${checksPath}"`], workDir, checksTimeout);
+          const stdout = execFileSync(resolveBashPath(), [checksPath.replace(/\\/g, '/')], {
+            cwd: workDir,
+            encoding: 'utf-8',
+            timeout: checksTimeout,
+            windowsHide: true,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
           checksDuration = (Date.now() - ct0) / 1000;
-          // execSync doesn't have a .killed — check by timeout
-          checksPass = result.code === 0;
-          checksOutput = (result.stdout + '\n' + result.stderr).trim();
-        } catch (e) {
+          checksPass = true;
+          checksOutput = stdout.trim();
+        } catch (e: any) {
           checksDuration = (Date.now() - ct0) / 1000;
+          checksTimedOut = e?.code === 'ETIMEDOUT';
           checksPass = false;
-          checksOutput = e instanceof Error ? e.message : String(e);
+          checksOutput = [e?.stdout, e?.stderr, e instanceof Error ? e.message : String(e)]
+            .filter(Boolean)
+            .join('\n')
+            .trim();
         }
       }
 
@@ -1367,15 +1414,14 @@ async function dispatchAction(
       // Auto-revert on discard/crash/checks_failed
       if (status !== 'keep') {
         try {
-          const protectedFiles = getProtectedFiles();
-          const stageCmd = protectedFiles
-            .map((f) => `git add "${join(workDir, f)}" 2>/dev/null || true`)
-            .join('; ');
-          execSync(`bash -c '${stageCmd}; git checkout -- .; git clean -fd 2>/dev/null'`, {
-            cwd: workDir,
-            timeout: 10000,
-            stdio: ['pipe', 'pipe', 'pipe'],
-          });
+          for (const file of getProtectedFiles()) {
+            if (fs.existsSync(join(workDir, file))) gitExec(['add', '--', file], workDir);
+          }
+          const checkoutResult = gitExec(['checkout', '--', '.'], workDir);
+          const cleanResult = gitExec(['clean', '-fd'], workDir);
+          if (checkoutResult.code !== 0 || cleanResult.code !== 0) {
+            throw new Error((checkoutResult.stderr || cleanResult.stderr).trim());
+          }
           text += `\n📝 Git: reverted changes (${status}) — autoresearch files preserved`;
         } catch (e) {
           text += `\n⚠️ Git revert failed: ${e instanceof Error ? e.message : String(e)}`;
@@ -1526,7 +1572,7 @@ async function dispatchAction(
 
 const PORT = Number(process.env.PI_AUTORESEARCH_PORT ?? 9878);
 const startedAt = Date.now();
-const LOG = process.env.PI_AUTORESEARCH_LOG ?? '/tmp/pi-autoresearch-harness.log';
+const LOG = process.env.PI_AUTORESEARCH_LOG ?? defaultLogPath();
 
 const TEXT_JSON = { 'content-type': 'application/json; charset=utf-8' } as const;
 const TEXT_PLAIN = { 'content-type': 'text/plain; charset=utf-8' } as const;
@@ -1606,7 +1652,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     }
 
     const sessionId = header(req, 'x-session-id');
-    const cwd = process.cwd();
+    const encodedCwd = header(req, 'x-cwd');
+    const cwd = encodedCwd ? decodeURIComponent(encodedCwd) : process.cwd();
 
     serverLog(`action: ${action} session: ${sessionId || '(none)'}`);
 

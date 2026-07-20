@@ -44,70 +44,74 @@ function resolveAutoresearchPath(
 }
 
 describe('File redirection path resolution', () => {
-  const mainCwd = '/project';
-  const worktreeDir = '/project/autoresearch/session-123';
+  const mainCwd = path.resolve(path.sep, 'project');
+  const worktreeDir = path.join(mainCwd, 'autoresearch', 'session-123');
 
   it('resolves relative paths against worktree when autoresearch is ON', () => {
     const runtime: AutoresearchRuntime = { autoresearchMode: true, worktreeDir };
     const resolved = resolveAutoresearchPath('src/foo.ts', mainCwd, runtime);
-    expect(resolved).toBe('/project/autoresearch/session-123/src/foo.ts');
+    expect(resolved).toBe(path.join(worktreeDir, 'src', 'foo.ts'));
   });
 
   it('resolves relative paths against main cwd when autoresearch is OFF', () => {
     const runtime: AutoresearchRuntime = { autoresearchMode: false, worktreeDir: null };
     const resolved = resolveAutoresearchPath('src/foo.ts', mainCwd, runtime);
-    expect(resolved).toBe('/project/src/foo.ts');
+    expect(resolved).toBe(path.join(mainCwd, 'src', 'foo.ts'));
   });
 
   it('resolves relative paths against main cwd when worktree is null', () => {
     const runtime: AutoresearchRuntime = { autoresearchMode: true, worktreeDir: null };
     const resolved = resolveAutoresearchPath('src/foo.ts', mainCwd, runtime);
-    expect(resolved).toBe('/project/src/foo.ts');
+    expect(resolved).toBe(path.join(mainCwd, 'src', 'foo.ts'));
   });
 
   it('redirects absolute paths within main cwd to worktree', () => {
     const runtime: AutoresearchRuntime = { autoresearchMode: true, worktreeDir };
-    const resolved = resolveAutoresearchPath('/project/src/foo.ts', mainCwd, runtime);
-    expect(resolved).toBe('/project/autoresearch/session-123/src/foo.ts');
+    const resolved = resolveAutoresearchPath(path.join(mainCwd, 'src', 'foo.ts'), mainCwd, runtime);
+    expect(resolved).toBe(path.join(worktreeDir, 'src', 'foo.ts'));
   });
 
   it('preserves absolute paths outside main cwd (external references)', () => {
     const runtime: AutoresearchRuntime = { autoresearchMode: true, worktreeDir };
-    const resolved = resolveAutoresearchPath('/etc/config.json', mainCwd, runtime);
-    expect(resolved).toBe('/etc/config.json');
+    const externalPath = path.resolve(path.sep, 'etc', 'config.json');
+    const resolved = resolveAutoresearchPath(externalPath, mainCwd, runtime);
+    expect(resolved).toBe(externalPath);
   });
 
   it('preserves absolute paths outside main cwd even when similar prefix', () => {
     const runtime: AutoresearchRuntime = { autoresearchMode: true, worktreeDir };
-    const resolved = resolveAutoresearchPath('/project-other/config.json', mainCwd, runtime);
-    expect(resolved).toBe('/project-other/config.json');
+    const externalPath = path.resolve(path.sep, 'project-other', 'config.json');
+    const resolved = resolveAutoresearchPath(externalPath, mainCwd, runtime);
+    expect(resolved).toBe(externalPath);
   });
 
   it('handles nested relative paths correctly', () => {
     const runtime: AutoresearchRuntime = { autoresearchMode: true, worktreeDir };
     const resolved = resolveAutoresearchPath('deep/nested/path/file.ts', mainCwd, runtime);
-    expect(resolved).toBe('/project/autoresearch/session-123/deep/nested/path/file.ts');
+    expect(resolved).toBe(path.join(worktreeDir, 'deep', 'nested', 'path', 'file.ts'));
   });
 
   it('handles absolute paths at root of main cwd', () => {
     const runtime: AutoresearchRuntime = { autoresearchMode: true, worktreeDir };
-    const resolved = resolveAutoresearchPath('/project/package.json', mainCwd, runtime);
-    expect(resolved).toBe('/project/autoresearch/session-123/package.json');
+    const resolved = resolveAutoresearchPath(path.join(mainCwd, 'package.json'), mainCwd, runtime);
+    expect(resolved).toBe(path.join(worktreeDir, 'package.json'));
   });
 
   it('preserves paths already within worktree (no double redirect)', () => {
     const runtime: AutoresearchRuntime = { autoresearchMode: true, worktreeDir };
-    const inputPath = '/project/autoresearch/session-123/src/foo.ts';
+    const inputPath = path.join(worktreeDir, 'src', 'foo.ts');
     const resolved = resolveAutoresearchPath(inputPath, mainCwd, runtime);
-    expect(resolved).toBe('/project/autoresearch/session-123/src/foo.ts');
+    expect(resolved).toBe(inputPath);
   });
 
   it('preserves autoresearch.md path when already in worktree', () => {
     const runtime: AutoresearchRuntime = { autoresearchMode: true, worktreeDir };
-    const inputPath = '/project/autoresearch/session-123/autoresearch.md';
+    const inputPath = path.join(worktreeDir, 'autoresearch.md');
     const resolved = resolveAutoresearchPath(inputPath, mainCwd, runtime);
-    expect(resolved).toBe('/project/autoresearch/session-123/autoresearch.md');
-    expect(resolved).not.toContain('autoresearch/session-123/autoresearch/session-123');
+    expect(resolved).toBe(inputPath);
+    expect(path.normalize(resolved)).not.toContain(
+      path.join('autoresearch', 'session-123', 'autoresearch', 'session-123')
+    );
   });
 });
 

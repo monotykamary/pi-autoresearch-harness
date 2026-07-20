@@ -8,6 +8,7 @@
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { resolveBashPath } from './platform.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -85,7 +86,7 @@ function hookScriptPath(workDir: string, stage: HookStage): string {
 
 function isExecutableFile(filePath: string): boolean {
   try {
-    fs.accessSync(filePath, fs.constants.X_OK);
+    if (process.platform !== 'win32') fs.accessSync(filePath, fs.constants.X_OK);
     return fs.statSync(filePath).isFile();
   } catch {
     return false;
@@ -111,7 +112,11 @@ export async function runHook(payload: HookPayload): Promise<HookResult> {
 
   const t0 = Date.now();
   return new Promise<HookResult>((resolve) => {
-    const child = spawn('bash', [script], { cwd: payload.cwd, timeout: TIMEOUT_MS });
+    const child = spawn(resolveBashPath(), [script.replace(/\\/g, '/')], {
+      cwd: payload.cwd,
+      timeout: TIMEOUT_MS,
+      windowsHide: true,
+    });
 
     let stdout = '';
     let stdoutBytes = 0;

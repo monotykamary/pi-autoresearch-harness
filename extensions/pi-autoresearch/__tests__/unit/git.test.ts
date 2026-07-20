@@ -10,27 +10,27 @@ describe('Worktree path logic', () => {
     const ctxCwd = '/home/user/project';
     const sessionId = 'session-123';
     const expectedPath = path.join(ctxCwd, 'autoresearch', sessionId);
-    expect(expectedPath).toBe('/home/user/project/autoresearch/session-123');
+    expect(expectedPath).toBe(path.join('/home/user/project', 'autoresearch', 'session-123'));
   });
 
   it('handles relative ctxCwd', () => {
     const ctxCwd = './project';
     const sessionId = 'abc';
     const expectedPath = path.join(ctxCwd, 'autoresearch', sessionId);
-    expect(expectedPath).toBe('project/autoresearch/abc');
+    expect(expectedPath).toBe(path.join('project', 'autoresearch', 'abc'));
   });
 
   it('extracts display path correctly', () => {
     const ctxCwd = '/home/user/project';
     const worktreePath = '/home/user/project/autoresearch/session-123';
     const displayPath = path.relative(ctxCwd, worktreePath);
-    expect(displayPath).toBe('autoresearch/session-123');
+    expect(displayPath).toBe(path.join('autoresearch', 'session-123'));
   });
 
   it('handles worktree outside project (absolute display)', () => {
     const ctxCwd = '/home/user/project';
     const worktreePath = '/tmp/other-worktree';
     const displayPath = path.relative(ctxCwd, worktreePath);
-    expect(displayPath).toBe('../../../tmp/other-worktree');
+    expect(displayPath).toBe(path.join('..', '..', '..', 'tmp', 'other-worktree'));
   });
 });

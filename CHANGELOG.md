@@ -18,6 +18,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Windows support: the harness now starts lazily on the first autoresearch command without `npx`, avoids visible console windows, uses the OS temp directory for logs, resolves Git Bash, terminates process trees, and handles worktree paths across separators.
+- The npm `pi-autoresearch` binary now uses a JavaScript launcher instead of asking Node to execute TypeScript directly.
 - Manual `/compact` mid-iteration no longer leaves the loop stuck — `session_compact` schedules a fresh resume.
 - Compaction during agent setup (before the first `log_experiment`) now resumes — the post-compaction gate is permissive.
 - Rapid back-to-back compactions all resume — no cooldown gate.

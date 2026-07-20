@@ -12,6 +12,26 @@ import * as os from 'node:os';
 import * as fs from 'node:fs';
 import { execSync } from 'node:child_process';
 
+function normalizePath(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/');
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function canonicalPath(filePath: string): string {
+  try {
+    return normalizePath(fs.realpathSync.native(filePath));
+  } catch {
+    return normalizePath(path.resolve(filePath));
+  }
+}
+
+function worktreePaths(output: string): string[] {
+  return output
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => line.slice(9).trim());
+}
+
 /** Get the path to the global gitignore file */
 function getGlobalGitignorePath(): string | null {
   try {
@@ -84,23 +104,14 @@ export function detectAutoresearchWorktree(ctxCwd: string, sessionId?: string): 
       stdio: ['pipe', 'pipe', 'ignore'],
     });
 
-    const lines = output.trim().split('\n');
-    for (const line of lines) {
-      if (line.startsWith('worktree ')) {
-        const worktreePath = line.slice(9).trim();
-
-        if (sessionId) {
-          const expectedSuffix = path.join('autoresearch', sessionId);
-          if (!worktreePath.endsWith(expectedSuffix)) {
-            continue;
-          }
-        }
-
-        const jsonlPath = path.join(worktreePath, 'autoresearch.jsonl');
-        if (fs.existsSync(jsonlPath)) {
-          return worktreePath;
-        }
+    for (const worktreePath of worktreePaths(output)) {
+      if (sessionId) {
+        const expectedSuffix = normalizePath(path.join('autoresearch', sessionId));
+        if (!canonicalPath(worktreePath).endsWith(expectedSuffix)) continue;
       }
+
+      const jsonlPath = path.join(worktreePath, 'autoresearch.jsonl');
+      if (fs.existsSync(jsonlPath)) return worktreePath;
     }
   } catch {
     // Git command failed or no worktrees
@@ -111,8 +122,9 @@ export function detectAutoresearchWorktree(ctxCwd: string, sessionId?: string): 
 /** Get the worktree path for display purposes (relative if inside project) */
 export function getDisplayWorktreePath(ctxCwd: string, worktreePath: string | null): string | null {
   if (!worktreePath) return null;
-  if (worktreePath.startsWith(ctxCwd)) {
-    return path.relative(ctxCwd, worktreePath) || '.';
+  const relativePath = path.relative(canonicalPath(ctxCwd), canonicalPath(worktreePath));
+  if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
+    return relativePath || '.';
   }
   return worktreePath;
 }
@@ -137,7 +149,12 @@ export async function createAutoresearchWorktree(
       cwd: ctxCwd,
       timeout: 10000,
     });
-    if (result.stdout?.includes(worktreePath) && fs.existsSync(worktreePath)) {
+    if (
+      worktreePaths(result.stdout ?? '').some(
+        (existingPath) => canonicalPath(existingPath) === canonicalPath(worktreePath)
+      ) &&
+      fs.existsSync(worktreePath)
+    ) {
       return worktreePath;
     }
     try {
@@ -189,13 +206,19 @@ export async function removeAutoresearchWorktree(
   worktreePath: string
 ): Promise<void> {
   try {
+    const branchResult = await pi.exec('git', ['branch', '--show-current'], {
+      cwd: worktreePath,
+      timeout: 5000,
+    });
     await pi.exec('git', ['worktree', 'remove', '--force', worktreePath], {
       cwd: ctxCwd,
       timeout: 30000,
     });
 
-    const branchName = path.relative(ctxCwd, worktreePath);
-    await pi.exec('git', ['branch', '-D', branchName], { cwd: ctxCwd, timeout: 10000 });
+    const branchName = branchResult.stdout?.trim();
+    if (branchName) {
+      await pi.exec('git', ['branch', '-D', branchName], { cwd: ctxCwd, timeout: 10000 });
+    }
 
     const autoresearchDir = path.join(ctxCwd, 'autoresearch');
     try {

@@ -128,7 +128,7 @@ describe('Session Isolation', () => {
       const worktreePath = await createAutoresearchWorktree(mockPi as any, repoDir, sessionId);
 
       expect(worktreePath).not.toBeNull();
-      expect(worktreePath).toContain(`autoresearch/${sessionId}`);
+      expect(path.normalize(worktreePath!)).toContain(path.join('autoresearch', sessionId));
       expect(fs.existsSync(worktreePath!)).toBe(true);
       expect(fs.existsSync(path.join(worktreePath!, '.git'))).toBe(true);
     });
