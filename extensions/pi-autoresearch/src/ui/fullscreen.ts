@@ -12,6 +12,10 @@ import { getDisplayWorktreePath } from '../git/index.js';
 const AUTORESEARCH_OVERLAY_MAX_HEIGHT_RATIO = 0.9;
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
+export function fitOverlayTitle(titleContent: string, innerWidth: number): string {
+  return truncateToWidth(` ${titleContent} `, Math.max(0, innerWidth), '');
+}
+
 /** Dependencies needed by fullscreen functions */
 export interface FullscreenContext {
   getRuntime: (ctx: ExtensionContext) => AutoresearchRuntime;
@@ -129,8 +133,8 @@ export function createFullscreenHandler(uiState: FullscreenState, ctx: Fullscree
             const titlePrefix = '🔬 autoresearch';
             const nameStr = state.name ? `: ${state.name}` : '';
             const titleContent = titlePrefix + nameStr;
-            const titleText = ` ${titleContent} `;
-            const titleLen = visibleWidth(titleContent) + 2;
+            const titleText = fitOverlayTitle(titleContent, innerW);
+            const titleLen = visibleWidth(titleText);
             const borderLen = Math.max(0, innerW - titleLen);
             const leftBorder = Math.floor(borderLen / 2);
             const rightBorder = borderLen - leftBorder;
