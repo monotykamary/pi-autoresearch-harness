@@ -174,8 +174,8 @@ When this file does **not** exist, everything behaves exactly as before — no c
 #!/bin/bash
 set -euo pipefail
 # Example: run tests and typecheck — suppress success output, only show errors
-pnpm test --run --reporter=dot 2>&1 | tail -50
-pnpm typecheck 2>&1 | grep -i error || true
+bun run test --run --reporter=dot 2>&1 | tail -50
+bun run typecheck 2>&1 | grep -i error || true
 ```
 
 ## Loop Rules

@@ -17,28 +17,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: oven-sh/setup-bun@v2
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Type check
-        run: pnpm typecheck
+        run: bun run typecheck
 
       - name: Run tests
-        run: pnpm test
+        run: bun run test
 
       - name: Smoke test CLI launcher
         run: node harness/pi-autoresearch.mjs --help
 
       - name: Run tests with coverage
         if: runner.os == 'Linux'
-        run: pnpm test:coverage
+        run: bun run test:coverage
 
       - name: Upload coverage
         if: always() && runner.os == 'Linux'

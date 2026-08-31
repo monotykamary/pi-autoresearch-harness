@@ -173,10 +173,10 @@ When done:
 
 | Domain       | Metric       | Command                                          | Target (optional) |
 | ------------ | ------------ | ------------------------------------------------ | ----------------- |
-| Test speed   | seconds ↓    | `pnpm test`                                      | ≤ 30s             |
-| Bundle size  | KB ↓         | `pnpm build && du -sb dist`                      | ≤ 100KB           |
+| Test speed   | seconds ↓    | `bun run test`                                   | ≤ 30s             |
+| Bundle size  | KB ↓         | `bun run build && du -sb dist`                   | ≤ 100KB           |
 | LLM training | val_bpb ↓    | `uv run train.py`                                | ≤ 2.0             |
-| Build speed  | seconds ↓    | `pnpm build`                                     | ≤ 10s             |
+| Build speed  | seconds ↓    | `bun run build`                                  | ≤ 10s             |
 | Lighthouse   | perf score ↑ | `lighthouse http://localhost:3000 --output=json` | ≥ 95              |
 
 ---
@@ -189,7 +189,7 @@ The **extension** is domain-agnostic infrastructure. The **skill** encodes domai
 ┌──────────────────────┐     ┌───────────────────────────┐
 │  Extension (global)  │     │  Skill (per-domain)       │
 │                      │     │                           │
-│  run_experiment      │◄────│  command: pnpm test       │
+│  run_experiment      │◄────│  command: bun run test       │
 │  log_experiment      │     │  metric: seconds (lower)  │
 │  widget + dashboard  │     │  scope: vitest configs    │
 │                      │     │  ideas: pool, parallel…   │
@@ -238,8 +238,8 @@ Create `autoresearch.checks.sh` to run correctness checks (tests, types, lint) a
 ```bash
 #!/bin/bash
 set -euo pipefail
-pnpm test --run
-pnpm typecheck
+bun run test --run
+bun run typecheck
 ```
 
 **How it works:**
