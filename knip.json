@@ -10,7 +10,6 @@
     "harness/hooks.ts"
   ],
   "ignoreExportsUsedInFile": true,
-  "ignoreDependencies": ["@earendil-works/pi-server"],
   "workspaces": {
     ".": {
       "entry": ["extensions/*/index.ts"],
