@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.12
+
+- Validate against Pi 0.99.0, including an offline real-host package-loading probe.
+- Declare imported host packages as wildcard peers and pin development dependencies to Pi 0.99.0.
+
 All notable changes to this project will be documented in this file.
 
 ## [1.0.5] - 2026-08-09
