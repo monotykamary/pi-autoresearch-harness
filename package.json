@@ -19,6 +19,10 @@
     "package.json"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/monotykamary/pi-autoresearch-harness.git"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
